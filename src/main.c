@@ -16,27 +16,100 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+typedef struct {
+    char *cmd_line;
+} HistoryEntry;
 
+HistoryEntry *dynamic_history = NULL;
+int history_size = 0;
+int history_capacity = 0;
 /*
   Function Declarations for builtin shell commands:
  */
 int lsh_cd(char **args);
 int lsh_help(char **args);
 int lsh_exit(char **args);
-
+int lsh_pwd(char **args);
+int lsh_echo(char **args);
+int lsh_history(char **args);
+int lsh_env(char **args);
 /*
   List of builtin commands, followed by their corresponding functions.
  */
+int lsh_echo(char **args)
+{
+    int i = 1;
+    while (args[i] != NULL) {
+        printf("%s", args[i]);
+        if (args[i + 1] != NULL) {
+            printf(" ");
+        }
+        i++;
+    }
+    printf("\n");
+    return 1;
+}
+int lsh_pwd(char **args)
+{
+    char cwd[1024];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        printf("%s\n", cwd);
+    } else {
+        perror("lsh: pwd error");
+    }
+    return 1;
+}
+
+int lsh_env(char **args)
+{
+    extern char **environ;
+    int i = 0;
+    while (environ[i] != NULL) {
+        printf("%s\n", environ[i]);
+        i++;
+    }
+    return 1;
+}
+
+int lsh_history(char **args)
+{
+    if (history_size == 0) {
+        printf("History is empty.\n");
+        return 1;
+    }
+    for (int i = 0; i < history_size; i++) {
+        printf(" %d  %s\n", i + 1, dynamic_history[i].cmd_line);
+    }
+    return 1;
+}
+void free_history(void)
+{
+    if (dynamic_history != NULL) {
+        for (int i = 0; i < history_size; i++) {
+            free(dynamic_history[i].cmd_line);
+        }
+        free(dynamic_history);
+        dynamic_history = NULL;
+    }
+}
 char *builtin_str[] = {
   "cd",
   "help",
-  "exit"
+  "exit",
+  "pwd",
+  "echo",
+  "history",
+  "env"
 };
 
 int (*builtin_func[]) (char **) = {
   &lsh_cd,
   &lsh_help,
-  &lsh_exit
+  &lsh_exit,
+  &lsh_pwd,
+  &lsh_echo,
+  &lsh_history,
+  &lsh_env
 };
 
 int lsh_num_builtins() {
@@ -253,9 +326,28 @@ void lsh_loop(void)
   char **args;
   int status;
 
+  char hostname[1024];
+  char cwd[1024];
+  char *username = "khalifa";
+
   do {
-    printf("> ");
+    gethostname(hostname, sizeof(hostname));
+    getcwd(cwd, sizeof(cwd));
+
+    printf("\033[01;32m%s@%s\033[00m:\033[01;34m%s\033[00m$ ", username, hostname, cwd);
+    fflush(stdout);
+
     line = lsh_read_line();
+
+    if (line != NULL && strlen(line) > 0) {
+        if (history_size >= history_capacity) {
+            history_capacity = history_capacity == 0 ? 10 : history_capacity * 2;
+            dynamic_history = realloc(dynamic_history, history_capacity * sizeof(HistoryEntry));
+        }
+        dynamic_history[history_size].cmd_line = strdup(line);
+        history_size++;
+    }
+
     args = lsh_split_line(line);
     status = lsh_execute(args);
 
@@ -263,7 +355,6 @@ void lsh_loop(void)
     free(args);
   } while (status);
 }
-
 /**
    @brief Main entry point.
    @param argc Argument count.
@@ -276,6 +367,7 @@ int main(int argc, char **argv)
 
   // Run command loop.
   lsh_loop();
+  free_history();
 
   // Perform any shutdown/cleanup.
 
